@@ -1,0 +1,196 @@
+---
+title: "Aldersfordeling"
+author: "Tanja Jessen"
+date: "12/11 2021"
+output: html_document
+---
+
+Først indlæses relevante pakker.
+
+```{r}
+library(tidyverse)
+library(tidytext)
+library(psych)
+library(plotrix)
+library(ggplot2)
+```
+
+
+# Aldersfordeling
+
+I datasæt 2 findes der en kolonne, der hedder 'Age'. Kolonnen indeholder oplysninger om folketingsmedlemmernes alder på det tidspunkt, hvor de taler. Med udgangspunkt i folketingsmedlemmernes alder kan vi undersøge,hvordan aldersfordelingen er inden for forskellige partier, inden for forskellige samlinger, og hvordan aldersfordelingen er i relation til de forskellige emner, som bliver behandlet.
+
+Nedenfor findes forskellige forslag til, hvordan dette kan foregå. Meningen er, at I med udgangspunkt i notebooken kan besvare spørgsmål i relation til alder, og at I ved at ændre lidt i koden vil kunne finde svar på andre spørgsmål, som I måtte have.
+
+# Indlæs data
+
+```{r}
+df <- read_csv("../Data/Datasæt2/whole_set/whole_set.csv")
+```
+
+Vi kan se de første rækker i dataframen med `head()`-funktionen.
+
+```{r}
+df %>% 
+  head()
+```
+Nogle af datasættets kolonner består af tal, som vi kan opsummere statistisk vha. funktionen `describe()` fra psych-pakken.
+
+Kolonnen 'Age' er en af dem, og når vi skal undersøge aldersfordelingen er det den, som vi skal kigge nærmere på.
+
+```{r}
+describe(df$Age)
+```
+Det kan også visualiseres med et boxplot.
+
+```{r}
+boxplot(df$Age, col = "pink")
+```
+
+I år med folketingsvalg består et år af to samlinger. Det bliver vigtigt, hvis vi skal se nærmere på aldersfordelingen blandt de politikere, der er på talerstolen i folketinget.
+
+Vi bruger `count()`-funktionen til at undersøge, hvor mange forskellige samlinger datasættet rummer og hvor mange taler, der er knyttet til hver samling.
+
+
+```{r}
+df %>% 
+  count(Session, sort = TRUE)
+```
+# Aldersfordelingen inden for en udvalgt samling
+
+Vi kan besvare spørgsmålet: hvordan er aldersfordelingen blandt de politikere, der har været på talerstolen inden for en udvalgt samling?
+
+Først bruger vi `filter()`-funktionen til kun at se på samling 20101. 
+
+Dernæst laver vi en ny kolonne, som udregner deres alder den 1. januar, altså midt i folketingsåret. Da de fleste har fødselsdag i løbet af folketingsåret, så kan der være noteret to forskellige aldre for dem, hvis de taler før de fylder år og igen efter. 
+
+Dernæst bruger vi `distinct()` til kun at få én række pr. navn.
+
+Til sidst laver vi et plot med ggplot, hvor vi specificerer, at x-aksen skal være alder, og vha. `geom_bar()` plottes frekvensen af hver alderstrin. 
+
+
+```{r}
+df %>% 
+  filter(Session == 20101) %>%
+  mutate(age_new = trunc(as.numeric(difftime("2011-01-01",Birth, units = "weeks"))/52.25)) %>% 
+  distinct(Name, .keep_all = TRUE) %>% 
+  ggplot(aes(age_new)) +
+  geom_bar(fill = "blue") +
+  labs(
+    title = "Aldersfordeling i samling 20101",
+    x = "Alder",
+    y = "Antal"
+  )
+```
+
+# Aldersfordelingen inden for en samling år grupperet i femårsinterval
+
+Koden neden for minder om koden ovenfor. Der er en lille forskel. Vi bruger cut til at opdele kolonnen med alder. Kolonnen bliver opdelt i et antal 'bins'. 'Bins' er i dette tilfælde en liste med tal i et interval af 5 fra 20 til 75, som er specificeret i variablen b. Det betyder, at kolonnen alder bliver opdelt i aldersgrupper af 5 år.
+
+Med `mutate()` gemmer vi intervallerne i en kolonne, som vi kalder bin. 
+Derefter laver vi plottet som før, nu med 'bin' på x-aksen. 
+
+```{r}
+b <- c(20,25,30,35,40,45,50,55,60,65,70,75)
+
+df %>% 
+  filter(Session == 20101) %>%
+  mutate(age_new = trunc(as.numeric(difftime("2011-01-01",Birth, units = "weeks"))/52.25)) %>%
+  distinct(Name, .keep_all = T) %>% 
+  mutate(bin = cut(age_new, breaks = b)) %>%
+  ggplot(aes(bin)) +
+  geom_bar(fill = "darkgreen") +
+  labs(
+    title = "Aldersfordeling i samling 20101 fordelt i grupper af 5 år",
+    x = "Alder",
+    y = "Antal"
+  )
+```
+
+
+# Aldersfordelingen inden for en samling inden for ét parti
+
+Vi kan besvare spørgsmålet: hvordan er aldersfordelingen inden for en samling inden for et udvalgt parti?
+
+I koden nedenfor besvarer vi ovenstående spørgsmål. 
+Koden er næsten den samme som før. Vi har tilføjet en `filter()`-funktion, så vi kun ser på partiet KF.
+
+```{r}
+df %>% 
+  filter(Session == 20101) %>%
+  mutate(age_new = trunc(as.numeric(difftime("2011-01-01",Birth, units = "weeks"))/52.25)) %>%
+  filter(Party == "KF") %>% 
+  distinct(Name, .keep_all = T) %>%
+  mutate(bin = cut(age_new, breaks = b)) %>%
+  ggplot(aes(bin)) +
+  geom_bar(fill = "darkgreen") +
+  labs(
+    title = "Aldersfordeling i samling 20101 i KF fordelt i grupper af 5 år"
+  )
+  
+```
+
+# Aldersfordeling blandt mænd og kvinder inden for en samling
+
+Vi kan besvare spørgsmålet: hvordan er aldersfordelingen blandt de mænd og kvinder, der har været på talerstolen inden for en samling?
+
+Nedenfor følger tre forskellige plots:
+- Det første plot handler om aldersfordelingen for mænd inden for en udvalgt samling og inden for et udvalgt parti.
+- Det andet plot handler om aldersfordelingen for kvinder inden for en udvalgt samling og inden for et udvalgt parti.
+- Det tredje plot handler om aldersfordeling blandt mænd og kvinder inden for en samling.
+
+
+```{r}
+df %>% 
+  filter(Session == 20101) %>%
+  mutate(age_new = trunc(as.numeric(difftime("2011-01-01",Birth, units = "weeks"))/52.25)) %>%
+  filter(Party == "KF") %>% 
+  filter(Gender == "Male") %>%
+  distinct(Name, .keep_all = T) %>%
+  mutate(bin = cut(age_new, breaks = b)) %>% 
+  ggplot(aes(bin)) +
+  geom_bar(fill = "darkgreen") +
+  labs(
+    title = "Aldersfordeling i samling 20101 i KF blandt mænd fordelt i grupper af 5 år"
+  )
+```
+
+```{r}
+df %>% 
+  filter(Session == 20101) %>%
+  mutate(age_new = trunc(as.numeric(difftime("2011-01-01",Birth, units = "weeks"))/52.25)) %>%
+  filter(Party == "KF") %>% 
+  filter(Gender == "Female") %>%
+  distinct(Name, .keep_all = T) %>% 
+  mutate(bin = cut(age_new, breaks = b)) %>% 
+  ggplot(aes(bin)) +
+  geom_bar(fill = "darkgreen") +
+  labs(
+    title = "Aldersfordeling i samling 20101 i KF blandt kvinder fordelt i grupper af 5 år"
+  )
+```
+
+
+```{r}
+df_bin <- df %>% 
+  filter(Session == 20101) %>% 
+  mutate(age_new = trunc(as.numeric(difftime("2011-01-01",Birth, units = "weeks"))/52.25)) %>%
+  distinct(Name, .keep_all = TRUE) %>%
+  mutate(bin = cut(age_new, breaks = b)) %>% 
+  select(bin, Gender)
+
+ggplot(data = df_bin, aes(x = as.factor(bin), fill = Gender)) +
+  geom_bar(data = subset(df_bin, Gender == "Female")) +
+  geom_bar(data = subset(df_bin, Gender == "Male"), aes(y = ..count..*(-1))) +
+  scale_y_continuous(breaks= seq(-40,40,10), labels = abs(seq(-40,40,10))) +
+  scale_colour_manual(values = c("gold1", "orange"),
+                      aesthetics = "fill") +
+  coord_flip() +
+  labs(
+    title = "Aldersfordeling blandt mænd og kvinder i samling 20101",
+    x = "Alder",
+    y = "Antal"
+  )
+  
+```
+

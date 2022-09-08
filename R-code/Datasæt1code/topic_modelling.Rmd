@@ -1,0 +1,101 @@
+---
+title: "Topic Modelling"
+output: html_document
+---
+# Loading libraries
+```{r, message=FALSE}
+library(tidyverse)
+library(tidytext)
+library(tm)
+library(topicmodels)
+```
+
+# Loading several assemblies into R and in the same dataframe: 
+
+The assemblies from 1952 to 2008 are located in the Datasæt1 folder under Data and then in the folder "Samlede". Each file is five numbers: 
+
+19531.csv
+
+The first four digits is the starting year of the assembly(the year of Folketingets goes from October to June) and the last number is the assembly. So the example above is the first assembly of Folketinget in 1953. 
+
+But let's say we want to load all the assemblies of the second period og Anker Jørgensen as prime minister in Denmark. He took office in February 13. 1975 and since an election marks a new assembly the first file we need to find i 19742.csv. Anker Jørgensen resigned as prime minister 10. September 1982 and Poul Schlüter took over without an election. Thus the last file we need is 19812.csv (Second assembly after election in December 1981 - spanning until the normal new assembly of October 1982).:
+
+
+Here we create a value that hold the path to all our assemblies of interest
+```{r}
+anker_files <- c("../../Data/Datasæt1/Samlede/19742.csv", "../../Data/Datasæt1/Samlede/19751.csv", "../../Data/Datasæt1/Samlede/19761.csv", "../../Data/Datasæt1/Samlede/19762.csv", "../../Data/Datasæt1/Samlede/19771.csv", "../../Data/Datasæt1/Samlede/19781.csv", "../../Data/Datasæt1/Samlede/19791.csv", "../../Data/Datasæt1/Samlede/19792.csv", "../../Data/Datasæt1/Samlede/19801.csv", "../../Data/Datasæt1/Samlede/19811.csv", "../../Data/Datasæt1/Samlede/19812.csv")
+```
+
+
+In the code below we create a for-loop to run through paths that we store above and import the data for each file. In the end of the for-loop the data of a specific file in binded to over-all data frame "anker_df" thus creating a dataset will the total of assemblies from Ankers period. 
+```{r, message=FALSE}
+anker_df <- tibble()
+for (filename in anker_files) {
+  temp_df <- read_delim(filename, delim = ";", locale = locale(encoding = "windows-1252"))
+anker_df <- bind_rows(anker_df, temp_df)
+}
+```
+
+
+# Topic modelling
+First we try with just a single year. We choose the years 1978 to 1981:
+```{r}
+anker_df %>% 
+  filter(år %in% 1978:1981) -> anker_7881
+```
+
+
+Topic modelling is based on the package `topicmodels` is based on DocumentTermMatrixes. Before we can do that we ned to unnest and count the words:
+
+```{r}
+stopord <- read_csv("https://raw.githubusercontent.com/stopwords-iso/stopwords-da/master/stopwords-da.txt", col_names = "word")
+```
+
+
+```{r}
+anker_7881 %>% 
+  unnest_tokens(word, indhold) %>% 
+  anti_join(stopord) %>% 
+  count(år, word, sort = TRUE) -> anker7881_counts
+```
+
+
+Cast to dtm
+```{r}
+anker7881_counts %>% 
+  cast_dtm(år, word, n) -> anker7881_dtm
+```
+
+
+```{r}
+LDA(anker7881_dtm, k = 8, control = list(seed = 1234)) -> anker_lda
+```
+
+
+COnvert back to tidy 
+
+```{r}
+anker_7881_topics <- tidy(anker_lda, matrix = "beta")
+```
+
+
+
+```{r}
+anker_terms <- anker_7881_topics %>%
+  group_by(topic) %>%
+  slice_max(beta, n = 5) %>% 
+  ungroup() %>%
+  arrange(topic, -beta)
+
+anker_terms
+```
+Visualisation
+```{r}
+anker_terms %>%
+  mutate(term = reorder_within(term, beta, topic)) %>%
+  ggplot(aes(beta, term, fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic, scales = "free") +
+  scale_y_reordered()
+```
+

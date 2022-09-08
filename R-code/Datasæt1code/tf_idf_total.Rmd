@@ -1,0 +1,58 @@
+---
+title: "Jordlovene"
+output: html_document
+---
+
+
+
+```{r}
+library(tidyverse)
+library(tidytext)
+```
+
+```{r}
+str_co
+```
+
+
+
+Load all data!
+
+```{r}
+list.files("../Common-files/Data/Datasæt1/Samlede/", full.names = TRUE) -> files
+```
+
+
+```{r}
+total_df <- tibble()
+for (filename in files) {
+  temp_df <- read_delim(filename, delim = ";", locale = locale(encoding = "windows-1252"))
+total_df <- bind_rows(total_df, temp_df)
+}
+```
+
+```{r}
+total_df %>% 
+  unnest_tokens(word, indhold) -> total_tidy
+```
+
+
+```{r}
+total_tidy %>% 
+  count(år, word, sort = TRUE) -> total_counts
+```
+
+```{r}
+total_counts %>% 
+  bind_tf_idf(word, år, n) -> total_tfidf
+```
+
+```{r}
+total_tfidf %>%
+  filter(word == "udlændinge") %>% 
+  ggplot +
+  geom_line(aes(x = år, y = tf))
+```
+
+
+

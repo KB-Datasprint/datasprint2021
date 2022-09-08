@@ -1,0 +1,190 @@
+---
+title: "Working with N-grams"
+author: "Max Odsbjerg Pedersen"
+date: "11/17/2020"
+output: 
+    html_document:
+      df_print: paged
+      toc: true
+      toc_depth: 2
+      toc_float: true
+---
+In the notebook "counting_terms.Rmd" we used the tf-idf method to identify that "indvandrerne" was significant to 1980 in Anker Jørgensen second period as prime minister. We also discovered that going from the distant reading of the text to the classical close reading of what was going on with "indvandrerne" i 1980 left us with more than 300 rows in the original dataset of the proceedings during Ankers Jørgensens second period. In this notebook we are going to dive into how we can use text mining and distant reading to provide more context. For this we use N-grams. 
+
+N-grams are a method for examining the context of words and how words occur together.  
+We will go through some of the most common n-grams, namely bigrams and trigrams, and apply the method to our Folketings data.
+
+# Loading libraries
+```{r, message=FALSE}
+library(tidyverse)
+library(tidytext)
+```
+
+# Loading several assemblies into R and in the same dataframe: 
+
+The assemblies from 1952 to 2008 are located in the Datasæt1 folder under Data and then in the folder "Samlede". Each file is five numbers: 
+
+19531.csv
+
+The first four digits is the starting year of the assembly(the year of Folketingets goes from October to June) and the last number is the assembly. So the example above is the first assembly of Folketinget in 1953. 
+
+But let's say we want to load all the assemblies of the second period og Anker Jørgensen as prime minister in Denmark. He took office in February 13. 1975 and since an election marks a new assembly the first file we need to find i 19742.csv. Anker Jørgensen resigned as prime minister 10. September 1982 and Poul Schlüter took over without an election. Thus the last file we need is 19812.csv (Second assembly after election in December 1981 - spanning until the normal new assembly of October 1982).:
+
+
+Here we create a value that hold the path to all our assemblies of interest
+```{r}
+anker_files <- c("../../Data/Datasæt1/Samlede/19742.csv", "../../Data/Datasæt1/Samlede/19751.csv", "../../Data/Datasæt1/Samlede/19761.csv", "../../Data/Datasæt1/Samlede/19762.csv", "../../Data/Datasæt1/Samlede/19771.csv", "../../Data/Datasæt1/Samlede/19781.csv", "../../Data/Datasæt1/Samlede/19791.csv", "../../Data/Datasæt1/Samlede/19792.csv", "../../Data/Datasæt1/Samlede/19801.csv", "../../Data/Datasæt1/Samlede/19811.csv", "../../Data/Datasæt1/Samlede/19812.csv")
+```
+
+
+In the code below we create a for-loop to run through paths that we store above and import the data for each file. In the end of the for-loop the data of a specific file in binded to over-all data frame "anker_df" thus creating a dataset will the total of assemblies from Ankers period. 
+```{r, message=FALSE}
+anker_df <- tibble()
+for (filename in anker_files) {
+  temp_df <- read_delim(filename, delim = ";", locale = locale(encoding = "windows-1252"))
+anker_df <- bind_rows(anker_df, temp_df)
+}
+```
+
+To ensure that the data are loaded and cleaned correctly we inspect the DataFrame with `head()`.
+
+```{r}
+anker_df %>% 
+  head()
+```
+
+
+
+# Creating N-grams
+In this section we are going to work with n-grams, which atomise the text from the years into sequences of a number of words. This is most explicit when talking about bigrams, where the text is atomised into word pairs. Let’s see it in action (be patient - it is alot of data!):
+
+```{r}
+anker_df %>% 
+  unnest_tokens(bigram, indhold, token = "ngrams", n = 2) -> bigrams_anker
+```
+
+Let's see the beginning of this new dataframe of word pairs:
+
+```{r}
+bigrams_anker %>%
+  head(n = 10) %>% 
+  select(bigram, everything()) 
+```
+Notice that the bigrams overlap - “folketingets forhandlinger” - “forhandlinger 1”.
+
+We can count the most frequent bigram used:
+```{r}
+bigrams_anker %>% 
+  count(bigram, sort = TRUE) %>%
+  top_n(15) %>%
+  mutate(bigram = reorder(bigram, n)) %>%
+  ggplot(aes(x = bigram, y = n)) +
+  geom_col() +
+  xlab(NULL) +
+  coord_flip() +
+      labs(x = "Count",
+      y = "Unique bigrams",
+      title = "Anker Jørgensen - 1975 to 1982:: Count of unique bigrams ")
+```
+
+This is however not very interesting. Let's try to examine how a specific word appears in bigrams.  
+In order to do this we ned to split the bigram column into two columns: word1 and word2:
+
+(This step takes a while as well)
+
+```{r}
+bigrams_anker_sep <- bigrams_anker %>% 
+  separate(bigram, c("word1", "word2"), sep = " ")
+```
+
+Now we can specify word1 to be a word of our interest - "indvandrerne":
+```{r}
+bigrams_anker_sep %>% 
+  filter(word1 == "indvandrerne") %>% 
+  count(word1, word2, sort = TRUE)
+```
+As mentioned in the beginning of the notebook we know from the "counting_terms.Rmd" that "indvandrerne" was significant to 1980. Let's only see the result for 1980 and not the entire period of Anker Jørgensen second period as prime minister: 
+
+```{r}
+bigrams_anker_sep %>% 
+  filter(år == 1980) %>% 
+  filter(word1 == "indvandrerne") %>% 
+  count(word1, word2, sort = TRUE)
+```
+
+
+## Trigrams
+
+Trigrams are just like bigrams - but with sequences of three words, as you might have expected. The code we use for making bigrams can be changed to creating trigrams. This time we separate the three words into their own columns right away:
+
+```{r}
+anker_df %>% 
+  unnest_tokens(trigram, indhold, token = "ngrams", n = 3) %>% 
+  separate(trigram, c("word1", "word2", "word3"), sep = " ")-> trigrams_anker_sep
+```
+
+Just as before we can target a word and count trigrams:
+
+```{r}
+trigrams_anker_sep %>% 
+  filter(word3 == "indvandrerne") %>% 
+  count(word1, word2, word3, sort = TRUE)
+```
+We can process our data in various ways in order to optimise our n-grams. One of them is stemming.
+Stemming is the process of removing all inflections of a word so only the word stem remains.
+To stem our words, we need a stemmer. For this we will import the Snowball stemmer, which is based on the original Porter stemmer.
+
+First we need to initiate the stemmer; 
+
+```{r}
+library(SnowballC)
+```
+
+Then we stem all the words in the three word columns. Because the stemming process is language specific, we need to pass the language of our text to the stemmer.
+```{r}
+trigrams_anker_sep %>% 
+  mutate(word1 = wordStem(word1, language = "danish")) %>% 
+  mutate(word2 = wordStem(word2, language = "danish")) %>% 
+  mutate(word3 = wordStem(word3, language = "danish")) -> trigrams_anker_sep
+  
+```
+
+Now we can do the count where we specify our word3 as "indvandrerne" again to see how the stemming has affected the count - only now we need to filter for det stemmed version of "indvandrerne" = "indvandr":
+
+```{r}
+trigrams_anker_sep %>% 
+  filter(word3 == "indvandr") %>% 
+  count(word1, word2, word3, sort = TRUE)
+```
+This enhanced our count alot! Instead of using the `filter`-function that looks for exactly "indvandr" we can use the `str_detect`function within the `filter`-function. `str_detect` looks for a pattern and if that pattern is present in a textual expression it will be returned. Thus we can find words that havent been stemmed to "indvandr" - fx words like "indvandrermiljø" and "indvandrerpolitik":
+
+```{r}
+trigrams_anker_sep %>% 
+  filter(str_detect(word3, "indvandr")) %>% 
+  count(word1, word2, word3, sort = TRUE)
+```
+
+
+We can also compare trigrams between two years:
+
+1980:
+```{r}
+trigrams_anker_sep %>% 
+  filter(år == 1980) %>% 
+  filter(str_detect(word3, "indvandr")) %>% 
+  count(word1, word2, word3, sort = TRUE)
+```
+
+1981:
+```{r}
+trigrams_anker_sep %>% 
+  filter(år == 1981) %>% 
+  filter(str_detect(word3, "indvandr")) %>% 
+  count(word1, word2, word3, sort = TRUE)
+```
+
+
+# Wrap up
+In this notebook we have demonstrated how we can use the tidytext function `unnest_tokens()` to create N-grams. In this process we created both bigrams and trigrams.
+
+We have also encountered stemming, which can be a useful tool whenever we want to count words across a text. We could have applied a number of other techniques for optimising our analyses. For instance, we could have cleaned the data by dealing with common OCR-reading mistakes.

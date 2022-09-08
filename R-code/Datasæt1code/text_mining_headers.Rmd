@@ -1,0 +1,227 @@
+---
+title: "Text mining the headers to find subjects"
+output: html_document
+---
+# Loading libraries
+```{r, message=FALSE}
+library(tidyverse)
+library(tidytext)
+```
+
+# Loading several assemblies into R and in the same dataframe: 
+
+The assemblies from 1952 to 2008 are located in the Datasæt1 folder under Data and then in the folder "Samlede". Each file is five numbers: 
+
+19531.csv
+
+The first four digits is the starting year of the assembly(the year of Folketingets goes from October to June) and the last number is the assembly. So the example above is the first assembly of Folketinget in 1953. 
+
+But let's say we want to load all the assemblies of into R? 
+
+First we find the path to all the files and store them!
+```{r}
+list.files("../../Data/Datasæt1/Samlede/", full.names = TRUE) -> files
+```
+
+
+In the code below we create a for-loop to run through paths that we store above and import the data for each file. In the end of the for-loop the data of a specific file in binded to over-all data frame "anker_df" thus creating a dataset will the total of assemblies from Ankers period. 
+```{r, message=FALSE}
+ft_df <- tibble()
+for (filename in files) {
+  temp_df <- read_delim(filename, delim = ";", locale = locale(encoding = "windows-1252"))
+ft_df <- bind_rows(ft_df, temp_df)
+}
+```
+
+# Text mining the headers
+
+First of we will drop the heaviest column, the "indhold" - this is to make things smoother later: 
+
+```{r}
+ft_df %>% 
+  select(-indhold) -> ft_df
+```
+
+Let's see
+```{r}
+ft_df %>% 
+  head()
+```
+There is a alot of numbers in the headings from dates etc. These aren't necessarily interesting here since, we want to explore topics and thus need words. Let's remove the numbers using a regular expression! 
+
+```{r}
+ft_df %>% 
+  mutate(TopMargin = str_remove_all(TopMargin, "\\d+")) -> ft_df
+
+# print the dataframe to see the result
+ft_df %>% 
+  select(TopMargin)
+```
+We see that we now have parentheses, full stops, backslashes and so on. This are sorted out in the next step, where we take each word and put it on its own row, while it retains what year the word is from. 
+
+```{r}
+ft_df %>% 
+  unnest_tokens(word, TopMargin) -> ft_df_tidy
+```
+
+Let's see it how it affected the data:
+
+```{r}
+ft_df_tidy %>% 
+  head()
+```
+Since each word has it's own row we can count which words appears most frequent:
+
+```{r}
+ft_df_tidy %>% 
+  count(word, sort = TRUE)
+```
+Let's load some stopwords and clean it: 
+
+```{r}
+stopord <- read_csv("https://raw.githubusercontent.com/stopwords-iso/stopwords-da/master/stopwords-da.txt", col_names = "word")
+```
+
+```{r}
+ft_df_tidy %>% 
+  anti_join(stopord, by = "word") %>% 
+  count(word, sort = TRUE)
+```
+We see that there are several single characters that we are not interested in. These are from abbreviations and not really interesting. A way to handle this is to sort out word that are smaller. We can do this by filtering out words that are below a certain amount of characters. This might also take stopwords in a Folketings context like "vedr" and "beh". Thus we filter out word below 6 characters: 
+
+```{r}
+ft_df_tidy %>% 
+  anti_join(stopord, by = "word") %>% 
+  filter(str_length(word) > 5) %>% 
+  count(word, sort = TRUE)
+```
+We still see weekdays and months appearing on the list. We want to sort them out as well. We can also define our own stopwords list: 
+
+```{r}
+months <- tibble(word = c("januar", "februar", "marts", "april", "maj", "juni", "juli", "august", "september", "oktober", "november", "december"))
+
+weekdays <- tibble(word = c("mandag", "tirsdag", "onsdag", "torsdag", "fredag", "lørdag", "søndag"))
+```
+
+
+We can now remove these with anti_join:
+
+```{r}
+ft_df_tidy %>% 
+  anti_join(stopord, by = "word") %>% 
+  anti_join(months, by = "word") %>% 
+  anti_join(weekdays, by = "word") %>% 
+  filter(str_length(word) > 5) -> ft_df_tidy_clean
+```
+Lets count on this new clean dataframe: 
+```{r}
+ft_df_tidy_clean %>% 
+  count(word, sort = TRUE)
+```
+
+Now we start to see som interesting things - at first sight! It is however words which in a Folketing context must be considered as stopwords. The first 20 words can be considered words which is very normal. Let's extract them and remove them just as we did with months and weekdays:
+
+```{r}
+ft_df_tidy_clean %>% 
+  count(word, sort = TRUE) %>% 
+  slice_max(n, n = 20) %>% 
+  select(word) -> ft_stopord
+```
+
+
+
+Yet again we remove this and further clean the ft_df_tidy_clean dataframe
+
+```{r}
+ft_df_tidy_clean %>% 
+  anti_join(ft_stopord, by = "word") -> ft_df_tidy_clean
+
+ft_df_tidy_clean %>% 
+  count(word, sort = TRUE)
+```
+Now we are slowly getting there. But we see that the OCR has misread som weekdays - fx "ntorsdag". Let's create a new dataframe with these weird weekdays:
+
+```{r}
+weekdays_misread <- tibble(word = c("nmandag", "ntirsdag", "nonsdag", "ntorsdag", "nfredag", "nlørdag", "nsøndag"))
+```
+
+Removing them:
+```{r}
+ft_df_tidy_clean %>%
+  anti_join(weekdays_misread, by = "word") -> ft_df_tidy_clean
+```
+
+
+But what if we want to compare the years? First we need to now the total amount of words within each year in order to calculate the frequencies. Frequencies lets us compare the presence of words over years
+
+Before we can do that we need the total words from the heading within each year:
+```{r}
+ft_df_tidy_clean %>% 
+  count(år) %>% 
+  rename(total = n)-> total_words_year
+```
+
+```{r}
+ft_df_tidy_clean %>% 
+  count(år, word, sort = TRUE) %>% 
+  left_join(total_words_year, by = "år")
+```
+
+```{r}
+ft_df_tidy_clean %>% 
+  count(år, word, sort = TRUE) %>% 
+  left_join(total_words_year, by = "år") %>% 
+  mutate(tf = n / total) -> ft_counts_pr_year
+
+ft_counts_pr_year
+```
+
+Lets examine the eighties:
+
+```{r}
+ft_counts_pr_year %>% 
+  filter(år %in% 1980:1990) %>% 
+  mutate(word = factor(word, levels = rev(unique(word)))) %>% 
+  group_by(år) %>% 
+  top_n(15) %>% 
+  ungroup %>%
+  ggplot(aes(word, tf)) +
+  geom_col(show.legend = FALSE, fill = "skyblue2") +
+  labs(x = NULL, y = "tf") +
+  facet_wrap(~år, ncol = 3, scales = "free") +
+  scale_y_continuous(labels = scales::comma_format(accuracy = 0.0001)) +
+  coord_flip()
+```
+
+```{r}
+ggsave("topic_in_headings_eighties.pdf", width = 65, height = 35, units = "cm")
+```
+
+
+```{r}
+ft_counts_pr_year %>% 
+  filter(år %in% 1990:2000) %>% 
+  mutate(word = factor(word, levels = rev(unique(word)))) %>% 
+  group_by(år) %>% 
+  top_n(15) %>% 
+  ungroup %>%
+  ggplot(aes(word, tf)) +
+  geom_col(show.legend = FALSE, fill = "skyblue2") +
+  labs(x = NULL, y = "tf") +
+  facet_wrap(~år, ncol = 3, scales = "free") +
+  scale_y_continuous(labels = scales::comma_format(accuracy = 0.0001)) +
+  coord_flip()
+```
+
+```{r}
+ggsave("topic_in_headings_nineties.pdf", width = 65, height = 35, units = "cm")
+```
+
+So the TOpMargin stops to contain information un the topic from 1994! interesting
+
+```{r}
+ft_df %>% 
+  filter(år == 1993) %>% 
+  count(TopMargin, sort = TRUE)
+```
+

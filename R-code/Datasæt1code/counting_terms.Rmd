@@ -1,0 +1,307 @@
+---
+title: "Relative frequencies - 1953 to 2008"
+author: "Max Odsbjerg Pedersen"
+date: "10/20/2020"
+output: 
+    html_document:
+      df_print: paged
+      toc: true
+      toc_depth: 2
+      toc_float: true
+---
+
+In this rmarkdown we will look at different ways of counting words.
+
+We start by loading the relavant libraries:
+
+```{r, message=FALSE}
+library(tidyverse)
+library(tidytext)
+```
+
+We load the data from the Folketings year 1973 / 74 - since there was an election in december 1973 this year consists of two assemblys. We import the second assembly of the Jordskredsvalg: 
+
+```{r, message=FALSE}
+ft_1973_2 <- read_delim("../../Data/Datasæt1/Samlede/19732.csv", delim = ";", locale = locale(encoding = "windows-1252"))
+```
+
+
+# Cleaning the data
+Let's explore what we got: 
+
+```{r}
+ft_1973_2 %>% 
+  head()
+```
+
+# Counting words
+
+The next step is to put each word on it's own row in order to count how many times a specific word appears
+
+```{r}
+ft_1973_2 %>% 
+  unnest_tokens(word, indhold) -> ft_1973_2_tidy
+```
+
+The next step is to see how many times "økonomi" appears: 
+
+```{r}
+ft_1973_2_tidy %>%
+  filter(word == "økonomi") %>% 
+  count(word)
+```
+
+This count is how many times "økonomi" appears in second assembly in 1973/1974. But since we don't have the same rich metadata as the younger data (2008 to now) we cant see which parties talks about økonomi (economy). Let's talk about possiblities instead of limits! This older dataset (1953 to 2008) is structured into one file pr assembly. If we are able to load several files into one dataframe we can make an analysis over time!
+
+# Loading several assemblies into R and in the same dataframe: 
+
+The assemblies from 1952 to 2008 are located in the Datasæt1 folder and then in the folder "Samlede". Each file is five numbers: 
+
+19531.csv
+
+The first four digits is the starting year of the assembly(the year of Folketingets goes from October to June) and the last number is the assembly. So the example above is the first assembly of Folketinget in 1953. 
+
+But let's say we want to load all the assemblies of the second period og Anker Jørgensen as prime minister in Denmark. He took office in February 13. 1975 and since an election marks a new assembly the first file we need to find i 19742.csv. Anker Jørgensen resigned as prime minister 10. September 1982 and Poul Schlüter took over without an election. Thus the last file we need is 19812.csv (Second assembly after election in December 1981 - spanning until the normal new assembly of October 1982).:
+
+
+Here we create a value that hold the path to all our assemblies of interest
+```{r}
+anker_files <- c("../../Data/Datasæt1/Samlede/19742.csv", "../../Data/Datasæt1/Samlede/19751.csv", "../../Data/Datasæt1/Samlede/19761.csv", "../../Data/Datasæt1/Samlede/19762.csv", "../../Data/Datasæt1/Samlede/19771.csv", "../../Data/Datasæt1/Samlede/19781.csv", "../../Data/Datasæt1/Samlede/19791.csv", "../../Data/Datasæt1/Samlede/19792.csv", "../../Data/Datasæt1/Samlede/19801.csv", "../../Data/Datasæt1/Samlede/19811.csv", "../../Data/Datasæt1/Samlede/19812.csv")
+```
+
+
+In the code below we create a for-loop to run through paths that we store above and import the data for each file. In the end of the for-loop the data of a specific file in binded to over-all data frame "anker_df" thus creating a dataset will the total of assemblies from Ankers period. 
+```{r}
+
+anker_df <- tibble()
+for (filename in anker_files) {
+  temp_df <- read_delim(filename, delim = ";", locale = locale(encoding = "windows-1252"))
+anker_df <- bind_rows(anker_df, temp_df)
+}
+```
+Just like before we explode the textual data so as each word gets it's own row. Might take at minute or two - It is alot of data!
+
+```{r}
+anker_df %>% 
+  unnest_tokens(word, indhold) -> anker_tidy
+```
+
+Like we did before with "økonomi" we can count a new word, but since we have severals year of data now we can se the development of the use of a word, when we count word pr. year:
+```{r}
+anker_tidy %>% 
+  filter(word == "miljø") %>% 
+  count(år, word)
+```
+
+But the problem here is that years are of different sizes so we cant compare these numbers. What do we mean by different sizes of the years? Well lets try to size how many words there are toal pr. year:
+
+```{r}
+anker_tidy %>% 
+  count(år)
+```
+We see that there is a big difference in the size of the Folketing-years. Therefore we cant use the count of a word pr year to compare any development. For that we need the term frequency
+
+## Calculating relative frequencies
+
+Relative frequency is a method of comparing occurences of keywords across a number of differently sized texts.
+
+Relative frequency is calculated by dividing the number of occurences of a word with the total number of words in the text:
+
+$$f_i = \frac{n_i}{N}$$
+
+Translated into code we can do the following for the occurrence of miljø in the year 1976 of our Anker Jørgensen-dataset and get the total amount of words for that year:
+
+```{r}
+hits <- anker_tidy %>%
+  filter(år == 1976) %>% 
+  filter(word == "miljø") %>% 
+  count(word)
+
+total <- anker_tidy %>%
+  filter(år == 1976) %>% 
+  count(word) %>% 
+  summarise(sum(n))
+```
+
+With the two numbers at hand we can now calculate the relative frequency:
+
+```{r}
+hits$n/total$`sum(n)`
+```
+
+This is very cumbersome and just to serve as an example for us. Luckily R and the `tidytext`package can calculate frequencies for all the words in all the years with just one function!
+
+```{r}
+anker_tidy %>%
+  count(word, år) %>% 
+  bind_tf_idf(word, år, n) ->anker_tf_idf
+```
+
+This way we get all the frequencies calculated in one sitting:
+```{r}
+anker_tf_idf %>% 
+  filter(word == "miljø")
+```
+
+Let's visualise the relative frequencies to get a better overview over the use of "miljø" in Anker Jørgensen second period as prime minister::
+
+```{r}
+anker_tf_idf %>% 
+  filter(word == "miljø") %>% 
+  arrange(desc(tf)) %>% 
+  ggplot(aes(år, tf), y = tf) +
+  geom_col() +
+  xlab(NULL) +
+  coord_flip() +
+      labs(x = "Year",
+      y = "Relative frequency",
+      title = "Relative frequencies for 'miljø' Anker Jørgensen second period as\nprime minister 1975 to 1982")
+```
+
+# Seeing how the two assemblys differs - term frequency - inversed document frequency
+
+We just calculated all the word's frequencies to compare the use of the word "miljø". This is useful if we have specific words of interest. In this analysis we wont try to find specific words but instead use a method that compares the years to eachother and find the words that are specific to each year. This method is called term frequency - inversed document frequency.
+We already worked with and calculated term frequencies so if we take a look at the terms with the highest frequency:
+
+```{r}
+anker_tf_idf %>% 
+  arrange(desc(tf)) %>% 
+  select(word, år, tf)
+```
+
+Not surprisingly, particles are the most common words we find. This is not particularly interesting for us in this inquiry, as we want to see which words are specific to the individual years of Anker Jørgensen second period. The particles will appear in all years and have high frequencies. We now need a measurement to punish words such as "og" and "den", which is expected to appear within all the years in our dataset. This is where the inversed document frequnecy enters the scene:
+
+$$\textrm{idf}(term)=\ln(\frac{n}{N})$$
+n is the totalt number of documents (years, in our example) and N is the number of years in which the word occurs.
+
+here we calculate idf for the word "og".
+
+$$\textrm{idf}(og)=\ln(\frac{8}{8})=0$$
+
+Thus we punish words that occur with great frequency in all years or many years. Words that occur in all the years cannot really tell us much about a particular year. Those words will have an idf of 0 resulting in a tf_idf value that is also 0, because this is defined by multiplying tf with idf.
+
+Luckily, R can easily calculate tf and tf_idf for all the words by using the bind_tf_idf function. This is the same function as we used earlier to find the frequency for miljø, so actually we already have the term frequency and inversed document frequency calculated. The same function also multiplies the two numbers together with is our measurement for how specific a word is to a given year. Lets examine the data frame before where we arrange on the highest tf_idf-value, which makes the most important word to the years:
+
+```{r chunk 9 - calculating tf and idf}
+anker_tf_idf %>% 
+  arrange(desc(tf_idf))
+```
+It seems that alot of the words on the list is proper nouns of politicians. No wonder if some of them has entered or left(election, retirement etc.) the scene of Folketinget during our period.
+
+But the list is hard to grasp. Next step is to visualise our result to get a better overview!
+
+# Visualisation
+
+Many people who have tip their toes in the text mining/data mining sea will have seen wordclouds showing the most used words in a text. I this visualisation we are going to create a wordcloud for each year showing the words with the highest tf_idf from that year. By doing so we will get a nice overview of what words are specific and important to each year. Remember that words which appear a lot across the years will not show here.
+
+
+```{r}
+anker_tf_idf <- anker_tf_idf %>% 
+  group_by(år) %>% 
+  mutate(rel_placering = (tf_idf - min(tf_idf, na.rm = T))/(max(tf_idf, na.rm = T) - min(tf_idf, na.rm = T))) %>% 
+  ungroup()
+```
+
+```{r chunk 11 - visualisation}
+anker_tf_idf %>% 
+  arrange(desc(rel_placering)) %>%
+  mutate(word = factor(word, levels = rev(unique(word)))) %>% 
+  group_by(år) %>% 
+  top_n(15) %>% 
+  ungroup %>%
+ ggplot(aes(word, tf_idf)) +
+  geom_col(show.legend = FALSE, fill = "skyblue2") +
+  labs(x = NULL, y = "tf-idf") +
+  facet_wrap(~år, ncol = 3, scales = "free") +
+  scale_y_continuous(labels = scales::comma_format(accuracy = 0.0001)) +
+  coord_flip()+
+  labs(
+      title = "Anker Jørgensen - 1975 to 1982: most important words for each year",
+       subtitle = "Importance determined by term frequency (tf) - inversed document frequency(idf)",
+      caption = "Data e-folketingstidende")
+```
+
+Because the space for visualisation is constricted in this .Rmd format we have to save the result as a pdf, where we define a larger canvas. Run the last code, chunk 12, and look in the files pane to the right. In the folder "do" you should get a file called "anker_tfidf.pdf". This is readable.
+
+```{r chunk 12 - saving visualisation as pdf}
+ggsave("anker_tfidf.pdf", width = 65, height = 35, units = "cm")
+```
+
+So one of the word "indvandrene" is significant for 1980 in our period. What is going on? Let's check how the use of the word developed over the year of Anker Jørgensen second period(same code as we used for "miljø"):
+```{r}
+anker_tf_idf %>% 
+  filter(word == "indvandrerne") %>% 
+  arrange(desc(tf)) %>% 
+  ggplot(aes(år, tf), y = tf) +
+  geom_col() +
+  xlab(NULL) +
+  coord_flip() +
+      labs(x = "Year",
+      y = "Relative frequency",
+      title = "Relative frequencies for 'indvandrerne' Anker Jørgensen second period as\nprime minister 1975 to 1982")
+```
+So clearly something is going on around 1980. But what do we do when we want to move from the distant reading of the visualisation above to see whats going on with indvandrene in 1980??
+
+# Examining the words in context
+
+Let's roll back to our orignal dataframe with Anker Jørgensens second period. If we look for "indvandrene" in the "indhold" column within the year of 1980, we can see the context:
+```{r}
+anker_df %>% 
+  filter(år == 1980) %>% 
+  filter(str_detect(indhold, "indvandrerne"))
+```
+Wow! 381 rows that is perhaps to much to examine with close reading! You should go and check the n-gram.Rmd file. The notebook helps you examine word context with distant reading! 
+
+# Improving the tf_idf
+Load file with members from the period:
+
+```{r}
+members_AJ_second_period <- read_csv("members_AJ_second_period.csv")
+```
+
+There's alot of names in the tf_idf - lets clean them out: 
+
+```{r}
+names <- tibble( name = members_AJ_second_period$medlemmer_short)
+```
+
+```{r}
+names %>% 
+  unnest_tokens(word, name) -> names
+```
+
+```{r}
+anker_tf_idf %>% 
+  anti_join(names) %>% 
+  arrange(desc(rel_placering)) %>%
+  mutate(word = factor(word, levels = rev(unique(word)))) %>% 
+  group_by(år) %>% 
+  top_n(15) %>% 
+  ungroup %>%
+ ggplot(aes(word, tf_idf)) +
+  geom_col(show.legend = FALSE, fill = "skyblue2") +
+  labs(x = NULL, y = "tf-idf") +
+  facet_wrap(~år, ncol = 3, scales = "free") +
+  scale_y_continuous(labels = scales::comma_format(accuracy = 0.0001)) +
+  coord_flip()+
+  labs(
+      title = "Anker Jørgensen - 1975 to 1982: most important words for each year",
+       subtitle = "Importance determined by term frequency (tf) - inversed document frequency(idf)",
+      caption = "Data e-folketingstidende")
+```
+
+```{r}
+ggsave("anker_tfidf_improved.pdf", width = 65, height = 35, units = "cm")
+```
+
+```{r}
+anker_tf_idf %>% 
+  anti_join(names) %>% 
+  arrange(desc(tf_idf))
+```
+
+```{r}
+anker_tf_idf %>% 
+  arrange(desc(tf_idf))
+```
+

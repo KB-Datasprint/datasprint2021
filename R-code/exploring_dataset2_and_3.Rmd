@@ -1,0 +1,193 @@
+---
+title: "Exploring Datasæt2 or Datasæt 3"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Exploring Datasæt2 and Datasæt3
+
+## Useful libraries
+
+We begin by loading some collections of useful libraries:
+
+```{r}
+library(tidyverse)
+library(hms)
+library(lubridate)
+library(tidytext)
+library(quanteda)
+library(quanteda.textplots)
+library(tm)
+```
+
+## Load data
+
+We read in data. Rather than the entire dataset, we only read in the first 
+session in 2019:
+```{r}
+df <- read_csv("../Data/Datasæt2/csv_files/20091.csv")
+```
+
+
+## Prepare the data
+In order to work with the data, we need to process it a bit.
+
+First we convert the text into tokens, using the unnest_tokens function:
+
+```{r}
+tokenized <- df %>% 
+  unnest_tokens(word, text)
+```
+
+## Analysis of the tokens
+
+With this new tokenized dataframe, we can do a number of text analyses.
+
+### count
+
+The simplest thing is to count the number a specific term/word occurs:
+
+```{r}
+tokenized %>% 
+  filter(word == 'grundloven') %>% 
+  nrow()
+```
+We take advantage of the fact that unnest_tokens by default converts all 
+words to lower case, making it easier to count a specific word.
+
+### Co-locations
+
+Which words occur together? 
+
+Rather than tokenizing by individual words, we can tokenize by ngrams. 
+```{r}
+bigrams <- df %>% unnest_tokens(bigram, text, token = 'ngrams', n = 2)
+```
+
+This new dataframe contains the bigrams in the text. Let's take a look:
+```{r}
+head(bigrams)
+```
+
+We can now count the most frequent word pairs in the text:
+
+```{r}
+bigrams %>%  
+  count(bigram, sort = T)
+```
+
+If we want the concordance, the context in which a term occurs, we can use the kwic() function from the quanteda library:
+
+```{r}
+kwic(df$text, pattern = "grundloven")
+```
+
+
+
+## Dispersion
+
+Dispersion plots allows us to visualize how terms occur across our text. 
+If the text has a temporal aspect - and our parliamentary data is sorted by date, we can approximate a timeline. The linearity can be skewed by the spread of the text data.
+
+We begin by collecting all text day by day:
+```{r}
+corpus <- df %>% 
+  mutate(date = as_date(start_time)) %>% 
+  group_by(date) %>% 
+  summarise(text = str_c(text, collapse=" "))
+```
+
+Then we extract the dates, build the corpus using the corpus function from tee quanteda library, and change the names in that corpus to be the dates extracted previously:
+```{r}
+dates <- corpus$date
+
+corpus <- quanteda::corpus(corpus)
+ 
+names(corpus) <- dates
+```
+
+The corpus function assigns its own names to the individual texts, we would like to control them ourself.
+
+And now we can use the textplot_xray function to plot the patterns of multiple terms in our text:
+```{r}
+textplot_xray(kwic(corpus, pattern = "grundloven"),
+              kwic(corpus, pattern = "ansvar"),
+              sort = T)
+```
+
+## Frequency distribution
+Frequency distribution is another useful tool which gives us a quick overview of the most common words in our text.
+
+We count each word in the tokenized dataframe, and divide by the total number of words.
+
+```{r}
+ tokenized %>% 
+   count(word, sort = T) %>% 
+   mutate(andel = n/sum(n))
+```
+
+
+## Removing stop words
+Our initial results included a lot of short, uninteresting words. These are commonly known as stop words. We can exclude these from our analysis by applying a list of stop words.
+
+The library tm includes a list of danish stopwords. Here we only look at the first six:
+
+```{r}
+stopwords(kind = "da") %>% head()
+```
+
+We then filter the list of tokens against the stop words. 
+We use the filterfunction, and filter for words that are not included in the list of stopwords. 
+
+The %in% operator returns TRUE if a word in the tokenized dataframe is included in the list of stopwords. The filter function returns every row where the expression is TRUE, so we place the expression in parentheses, and place an ! in front, inverting FALSE to TRUE and TRUE to FALSE. We now only get the words that are not included in the list of stopwords.
+
+```{r}
+without_stopwords <- tokenized %>% 
+  filter(!(word %in% stopwords(kind = "da")))
+```
+
+Now we would expect a more interesting result from our frequency analysis:
+
+```{r}
+without_stopwords %>% 
+   count(word, sort = T) %>% 
+   mutate(andel = n/sum(n))
+```
+
+The list of stopwords appears to be somewhat lacking. 
+
+We can define our own list of stopwords:
+```{r}
+my_own_stopwords <- c("så",
+                      "kan",
+                      "tak")
+```
+
+And then use that in addition to the list we get from tm.
+
+## Word length
+Alternatively we can decide that words shorter that six letters are not interesting, and filter them out:
+
+```{r}
+shorter_words <- without_stopwords %>% 
+  filter(nchar(word) > 6)
+```
+
+## Plotting frequency distribution
+
+We can now calculate new frequencies (again), and plot them. We sort by frequency, and only look at the 20 most frequent words:
+```{r}
+shorter_words %>% 
+  count(word, sort = T) %>% 
+  mutate(andel = n/sum(n)) %>% 
+  arrange(desc(andel)) %>% 
+  slice(1:20) %>% 
+  ggplot(aes(word, andel)) +
+  geom_col() +
+  coord_flip()
+```
+
+Combining simple functions for counting, with more advanced functions from specialized libraries provides virtually endless possibilities. In this notebook we have only scratched at the surface.

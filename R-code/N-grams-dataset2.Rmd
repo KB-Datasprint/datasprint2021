@@ -1,0 +1,193 @@
+---
+title: "Working with N-grams - dataset 2"
+author: "Christian Knudsen"
+date: "11/16/2021"
+output: 
+    html_document:
+      df_print: paged
+      toc: true
+      toc_depth: 2
+      toc_float: true
+---
+In the notebook "N-grams.Rmd" we looked at N-grams in dataset 1, covering the
+years 1953 to 2008. 
+
+But what happened after that, from 2009 to 2017?
+
+The data is structured a bit different, but the approach is similar.
+
+# Loading libraries
+```{r, message=FALSE}
+library(tidyverse)
+library(tidytext)
+```
+
+# Loading data: 
+
+The data from 2009 to 2017 is stored in the Datasæt2 folder, and rather than loading
+the individual files, we have one large file with the entire period. 
+
+
+```{r}
+data <- read_csv("../Data/Datasæt2/whole_set/whole_set.csv")
+```
+
+To ensure that the data are loaded and cleaned correctly we inspect the DataFrame with `head()`.
+
+```{r}
+data %>% 
+  head()
+```
+
+
+
+# Creating N-grams
+In this section we are going to work with n-grams, which atomise the text from the years into sequences of a number of words. This is most explicit when talking about bigrams, where the text is atomised into word pairs. Let’s see it in action (be patient - it is alot of data!):
+
+Note that in this dataset, the content, the text, is not stored in the "indhold" 
+column, but rather in the column "Text".
+
+```{r}
+bigrams <- data %>%
+  unnest_tokens(bigram, Text, token = "ngrams", n = 2) 
+```
+
+Let's see the first few bigrams of this new dataframe of word pairs:
+
+```{r}
+bigrams %>%
+  head(n = 10) %>% 
+  select(bigram) 
+```
+Notice that the bigrams overlap - “mødet er” - “er åbnet”.
+
+And that the letters are all converted to lowercase.
+
+We can count the most frequent bigram used:
+```{r}
+bigrams %>% 
+  count(bigram, sort = TRUE) %>%
+  top_n(15) %>%
+  mutate(bigram = reorder(bigram, n)) %>%
+  ggplot(aes(x = bigram, y = n)) +
+  geom_col() +
+  xlab(NULL) +
+  coord_flip() +
+      labs(x = "Count",
+      y = "Unique bigrams",
+      title = "Assemblies - 2009 to 2017:: Count of unique bigrams ")
+```
+
+Let's try to examine how a specific word appears in bigrams.  
+In order to do this we ned to split the bigram column into two columns: word1 and word2:
+
+And we are going to only look at 2015 - because the dataset is very large! The
+function year() extracts the year part of the date.
+
+(This step takes a while as well)
+
+```{r}
+bigrams_sep_2015 <- bigrams %>% 
+  filter(year(Date) == 2015) %>% 
+  separate(bigram, c("word1", "word2"), sep = " ")
+```
+
+Now we can specify word1 to be a word of our interest - "flygtninge":
+```{r}
+bigrams_sep_2015 %>% 
+  filter(word1 == "flygtninge") %>% 
+  count(word1, word2, sort = TRUE)
+```
+
+As mentioned in the beginning of the notebook we know from the "counting_terms.Rmd" 
+that "indvandrerne" was significant to 1980. Let's only see the result for 2015, 
+a year where we might expect that this word would be significant as well:
+
+```{r}
+bigrams_sep_2015 %>% 
+  filter(word1 == "indvandrerne") %>% 
+  count(word1, word2, sort = TRUE)
+```
+
+No. Not any more. But "flygtninge" is. Something appears to have changed.
+
+## Trigrams
+
+Trigrams are just like bigrams - but with sequences of three words, as you might have expected. The code we use for making bigrams can be changed to creating trigrams. This time we separate the three words into their own columns right away, and we filter, so we only look at the year 2015:
+
+```{r}
+trigrams_sep_2015 <- data %>% 
+  filter(year(Date) == 2015) %>% 
+  unnest_tokens(trigram, Text, token = "ngrams", n = 3) %>% 
+  separate(trigram, c("word1", "word2", "word3"), sep = " ")
+```
+
+Just as before we can target a word and count trigrams:
+
+```{r}
+trigrams_sep_2015 %>% 
+  filter(word3 == "flygtninge") %>% 
+  count(word1, word2, word3, sort = TRUE)
+```
+We can process our data in various ways in order to optimise our n-grams. One of them is stemming.
+Stemming is the process of removing all inflections of a word so only the word stem remains.
+To stem our words, we need a stemmer. For this we will import the Snowball stemmer, which is based on the original Porter stemmer.
+
+First we need to initiate the stemmer; 
+
+```{r}
+library(SnowballC)
+```
+
+Then we stem all the words in the three word columns. Because the stemming process is language specific, we need to pass the language of our text to the stemmer.
+```{r}
+ trigrams_sep_2015_stemmed <- trigrams_sep_2015 %>% 
+  mutate(word1 = wordStem(word1, language = "danish")) %>% 
+  mutate(word2 = wordStem(word2, language = "danish")) %>% 
+  mutate(word3 = wordStem(word3, language = "danish"))
+  
+```
+
+Now we can do the count where we specify our word3 as "indvandrerne" again to see how the stemming has affected the count - only now we need to filter for det stemmed version of "indvandrerne" = "indvandr":
+
+```{r}
+ trigrams_sep_2015_stemmed %>% 
+  filter(word3 == "flygtning") %>% 
+  count(word1, word2, word3, sort = TRUE)
+```
+This enhanced our count a bit! Instead of using the `filter`-function that looks for exactly "flygtning" we can use the `str_detect`function within the `filter`-function. `str_detect` looks for a pattern and if that pattern is present in a textual expression it will be returned. Thus we can find words that havent been stemmed to "flygtning" - fx words like "flygtningepolitk":
+
+```{r}
+trigrams_sep_2015 %>% 
+  filter(str_detect(word3, "flygtning")) %>% 
+  count(word1, word2, word3, sort = TRUE)
+```
+
+
+We can also compare trigrams between two years:
+
+2015:
+```{r}
+data %>% 
+  filter(year(Date) == 2015) %>% 
+  unnest_tokens(trigram, Text, token = "ngrams", n = 3) %>% 
+  separate(trigram, c("word1", "word2", "word3"), sep = " ") %>% 
+  filter(str_detect(word3, "flygtning")) %>% 
+  count(word1, word2, word3, sort = TRUE)
+```
+
+2014:
+```{r}
+data %>% 
+  filter(year(Date) == 2014) %>% 
+  unnest_tokens(trigram, Text, token = "ngrams", n = 3) %>% 
+  separate(trigram, c("word1", "word2", "word3"), sep = " ") %>% 
+  filter(str_detect(word3, "flygtning")) %>% 
+  count(word1, word2, word3, sort = TRUE)
+```
+
+
+# Wrap up
+In this notebook we have demonstrated how we can use the tidytext function `unnest_tokens()` to create N-grams. In this process we created both bigrams and trigrams.
+
+We have also encountered stemming, which can be a useful tool whenever we want to count words across a text. We could have applied a number of other techniques for optimising our analyses. For instance, we could have cleaned the data by dealing with common OCR-reading mistakes.
